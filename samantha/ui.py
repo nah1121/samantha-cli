@@ -86,12 +86,32 @@ class UI:
         self.console.print(line)
 
     def show_samantha(self, text: str) -> None:
-        """Display Samantha's response."""
+        """Display Samantha's response all at once."""
         line = Text()
         line.append("  Samantha: ", style="bold magenta")
         line.append(text)
         self.console.print(line)
-        self.console.print()  # Blank line for breathing room
+        self.console.print()
+
+    def show_samantha_streaming(self, text: str, duration: float = 3.0) -> None:
+        """Reveal Samantha's response word by word, timed to audio duration."""
+        import time
+
+        words = text.split()
+        if not words:
+            return
+
+        ms_per_word = max(0.06, duration / len(words))
+        revealed = "  Samantha: "
+
+        for i, word in enumerate(words):
+            revealed += word + " "
+            # Clear line and reprint
+            self.console.print(f"\r{revealed}", end="", highlight=False, style="magenta" if i == 0 else None)
+            time.sleep(ms_per_word)
+
+        self.console.print()  # Final newline
+        self.console.print()  # Breathing room
 
     def show_error(self, message: str) -> None:
         """Display an error message."""

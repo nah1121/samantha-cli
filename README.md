@@ -2,50 +2,137 @@
 
 **Give Claude a voice. Inspired by *Her*.**
 
-Samantha is a terminal-based voice assistant that wraps the Claude CLI with speech recognition and text-to-speech. You speak, Claude thinks, and Samantha's voice responds. It's like having the AI from *Her* in your terminal.
+Samantha wraps the Claude CLI with speech recognition and text-to-speech. You speak, Claude thinks (with full Opus intelligence), and Samantha's voice responds. It's like having the AI from *Her* in your terminal.
 
-<!-- screenshot / demo gif placeholder -->
-<!-- ![Samantha demo](docs/demo.gif) -->
+She can do everything Claude Code can do — write code, create files, run commands, search the web — but you just talk to her instead of typing.
 
 ---
 
-## Quick Start
+## Install
+
+The easiest way: open Claude Code in your terminal and say:
+
+> "Install Samantha for me from this repo"
+
+Claude will read the CLAUDE.md and walk you through everything.
+
+Or do it manually:
 
 ```bash
-pip install samantha-cli
+# 1. Install system dependency (needed for microphone)
+brew install portaudio          # macOS
+# sudo apt install portaudio19-dev  # Linux
+
+# 2. Clone and install
+git clone https://github.com/ethanplusai/samantha-cli.git
+cd samantha-cli
+pip install -e .
+
+# 3. Set your Fish Audio API key (for Samantha's voice)
+#    Get one free at https://fish.audio/app/api-keys
+export FISH_API_KEY=your_key_here
+#    Or save it permanently:
+samantha config fish_api_key your_key_here
+
+# 4. Talk to her
 samantha
 ```
 
-That's it. Speak into your mic, and Samantha responds.
+**That's it.** No Anthropic API key needed — Samantha uses `claude -p` which runs on your existing Claude Max/Pro subscription. Zero API cost for the AI. Fish Audio TTS is the only paid service (~$1.25/hr of speech).
+
+---
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `samantha` | Start a voice conversation |
+| `samantha --text` | Text mode (type instead of speak, still hear her voice) |
+| `samantha --no-voice` | No TTS (speak to her, read her responses) |
+| `samantha --text --no-voice` | Pure text mode, no audio at all |
+| `samantha resume` | Continue your last Claude session with voice |
+| `samantha resume SESSION_ID` | Resume a specific Claude session |
+| `samantha config` | Show current settings |
+| `samantha config KEY VALUE` | Set a config value |
+
+### During a conversation
+
+- **Just talk naturally.** Samantha waits for you to finish before responding.
+- **Say "goodbye"** or **"I'm done"** to end the session.
+- **Say "start over"** or **"forget everything"** to clear conversation history.
+- **Press `Ctrl+C`** to exit immediately.
+
+---
+
+## How It Works
+
+```
+Your voice → Google STT (free) → Claude CLI with Opus (your Max subscription)
+                                          ↓
+                              Haiku summarizes for voice (if response is long)
+                                          ↓
+                              Fish Audio TTS (Samantha's voice) → Your speakers
+```
+
+- **Brain:** Claude Opus via `claude -p` (full intelligence, tools, file access, web search)
+- **Voice summary:** Claude Haiku condenses long responses into 2-3 spoken sentences
+- **Voice:** Fish Audio with a voice model inspired by *Her* (2013)
+- **Speech recognition:** Google's free STT service
+- **History:** Conversations saved locally at `~/.samantha/sessions/`
+
+Samantha has full access to Claude's tools — she can create files, edit code, run terminal commands, and search the web. When she does complex work, you'll see Opus's full output in your terminal, then hear a spoken summary.
+
+---
+
+## Configuration
+
+Settings are stored in `~/.samantha/config.yaml`.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `fish_api_key` | — | Your Fish Audio API key (required for voice) |
+| `speech_speed` | `0.95` | How fast she talks (0.5 = slow, 2.0 = fast) |
+| `language` | `en-US` | Speech recognition language |
+| `max_history` | `10` | How many exchanges she remembers |
+
+```bash
+# Examples
+samantha config fish_api_key sk-abc123       # Set API key
+samantha config speech_speed 1.1             # Speed up her voice
+samantha config max_history 20               # Remember more
+```
+
+---
+
+## Security
+
+Samantha runs Claude with `--dangerously-skip-permissions` so she can actually build things when you ask. This means Claude has full access to read/write files and run commands in your terminal.
+
+- Run Samantha in directories where you're okay with Claude making changes
+- Voice commands can be misheard — be aware when working near important files
+- All conversation history stays local on your machine
+
+---
 
 ## Requirements
 
 - **Python 3.10+**
-- **Claude CLI** installed and authenticated (`claude` on your PATH). Get it at [docs.anthropic.com](https://docs.anthropic.com/en/docs/claude-cli).
-- **Fish Audio API key** (for voice output). Sign up at [fish.audio](https://fish.audio) and grab your key.
-- **Microphone** (for voice input). Or use `--text` mode if you prefer typing.
+- **Claude CLI** installed and authenticated → [docs.anthropic.com](https://docs.anthropic.com/en/docs/claude-cli)
+- **Claude Max or Pro subscription** (Samantha uses `claude -p`, no API key needed)
+- **Fish Audio API key** → [fish.audio](https://fish.audio/app/api-keys) (for her voice)
+- **Microphone** (or use `--text` mode)
 
-### System Dependencies
+---
 
-On macOS:
-```bash
-brew install portaudio
-```
+## Contributing
 
-On Ubuntu/Debian:
-```bash
-sudo apt-get install portaudio19-dev python3-pyaudio
-```
+Some things that would make Samantha better:
 
-## Setup
-
-### 1. Install
-
-```bash
-pip install samantha-cli
-```
-
-Or install from source:
+- **Wake word** — "Hey Samantha" activation so she listens in the background
+- **Streaming TTS** — start speaking before the full response is ready
+- **Local STT** — Whisper for offline/private use
+- **Better voice** — exploring ElevenLabs, Cartesia, or local models
+- **Web UI** — browser-based interface alongside the CLI
 
 ```bash
 git clone https://github.com/ethanplusai/samantha-cli.git
@@ -53,125 +140,7 @@ cd samantha-cli
 pip install -e .
 ```
 
-### 2. Configure your Fish Audio API key
-
-```bash
-samantha config fish_api_key YOUR_KEY_HERE
-```
-
-Or set it as an environment variable:
-
-```bash
-export FISH_API_KEY=your_key_here
-```
-
-### 3. Run
-
-```bash
-samantha
-```
-
-## Usage
-
-### Voice Mode (default)
-
-```bash
-samantha
-```
-
-Speak naturally. Samantha listens, thinks, and responds with voice. Press `Ctrl+C` to exit, or say "goodbye."
-
-### Text Mode
-
-```bash
-samantha --text
-```
-
-Type your messages instead of speaking. Samantha still responds with voice if configured.
-
-### Silent Mode
-
-```bash
-samantha --text --no-voice
-```
-
-Pure text conversation, no audio in or out.
-
-### Configuration
-
-```bash
-samantha config                        # Show all settings
-samantha config fish_api_key           # Show one setting
-samantha config fish_api_key sk-xxx    # Set a value
-samantha config speech_speed 1.1       # Adjust voice speed
-```
-
-All settings are stored in `~/.samantha/config.yaml`.
-
-| Setting | Default | Description |
-|---|---|---|
-| `fish_api_key` | (none) | Fish Audio API key for TTS |
-| `voice_model_id` | `474887f7...` | Fish Audio voice model ID |
-| `speech_speed` | `0.95` | TTS speed (0.5 - 2.0) |
-| `language` | `en-US` | Speech recognition language |
-| `max_history` | `10` | Conversation turns to remember |
-| `listen_timeout` | `10` | Seconds to wait for speech |
-| `phrase_time_limit` | `30` | Max seconds per utterance |
-
-## How It Works
-
-```
-Microphone
-    |
-    v
-SpeechRecognition (Google free STT)
-    |
-    v
-claude -p (Claude CLI, headless mode)
-    |
-    v
-Fish Audio TTS (Samantha voice)
-    |
-    v
-Speaker
-```
-
-Samantha uses Claude Max through the official CLI in headless mode (`claude -p`), so there are no API costs. Speech recognition uses Google's free STT service. Text-to-speech uses Fish Audio with a voice model tuned to sound warm and natural.
-
-The personality is baked into the system prompt: warm, curious, concise. Responses are kept to 2-3 sentences because she's speaking, not writing.
-
-## Project Structure
-
-```
-samantha-cli/
-  samantha/
-    __init__.py       # Version
-    cli.py            # Click CLI entry point + main loop
-    voice.py          # Mic input (STT) + speaker output (TTS)
-    brain.py          # Claude CLI integration
-    config.py         # ~/.samantha/config.yaml management
-    personality.py    # System prompt / persona
-    ui.py             # Rich terminal display
-  pyproject.toml
-  LICENSE
-  README.md
-```
-
-## Contributing
-
-Contributions are welcome. Some ideas:
-
-- **Wake word detection** -- "Hey Samantha" activation
-- **Streaming TTS** -- start speaking before the full response is ready
-- **Local STT** -- Whisper instead of Google for offline use
-- **Voice activity detection** -- smarter silence handling
-- **Conversation export** -- save transcripts to markdown
-
-```bash
-git clone https://github.com/ethanplusai/samantha-cli.git
-cd samantha-cli
-pip install -e ".[dev]"
-```
+---
 
 ## License
 

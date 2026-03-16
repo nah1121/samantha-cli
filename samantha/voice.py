@@ -11,7 +11,6 @@ import os
 import tempfile
 from pathlib import Path
 
-import pygame
 
 from samantha import config as cfg
 
@@ -33,7 +32,7 @@ class VoiceEngine:
         speech_speed: float = 0.95,
         language: str = "en-US",
         listen_timeout: int = 10,
-        phrase_time_limit: int = 30,
+        phrase_time_limit: int = 60,
     ) -> None:
         self.fish_api_key = fish_api_key
         self.voice_model_id = voice_model_id or cfg.DEFAULTS["voice_model_id"]
@@ -45,7 +44,6 @@ class VoiceEngine:
         self._fish_client = None
         self._tts_config = None
         self._recognizer = None
-        self._pygame_initialized = False
         self._temp_dir = Path(tempfile.mkdtemp(prefix="samantha_"))
 
     @property
@@ -77,15 +75,25 @@ class VoiceEngine:
             format="mp3",
         )
 
-    def _init_pygame(self) -> None:
-        """Lazily initialize pygame mixer for audio playback."""
-        if self._pygame_initialized:
-            return
+    def _play_audio_file(self, path: str) -> None:
+        """Play an audio file using the best available system player."""
+        import subprocess
+        import platform
 
-        # Suppress pygame welcome message
-        os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
-        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=2048)
-        self._pygame_initialized = True
+        if platform.system() == "Darwin":
+            # macOS: afplay is built-in, no dependencies needed
+            subprocess.run(["afplay", path], check=True, capture_output=True)
+        else:
+            # Linux/other: try ffplay, mpv, then aplay
+            for player in [["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", path],
+                          ["mpv", "--no-video", "--really-quiet", path],
+                          ["aplay", path]]:
+                try:
+                    subprocess.run(player, check=True, capture_output=True)
+                    return
+                except (FileNotFoundError, subprocess.CalledProcessError):
+                    continue
+            raise RuntimeError("No audio player found. Install ffmpeg or mpv.")
 
     def _init_recognizer(self):
         """Lazily initialize the speech recognizer."""
@@ -95,8 +103,12 @@ class VoiceEngine:
         import speech_recognition as sr
 
         self._recognizer = sr.Recognizer()
-        # Tweak energy threshold for better detection
+        # Be very patient - wait for long pauses before considering speech "done"
+        self._recognizer.pause_threshold = 3.0  # 3 seconds of silence before stopping (default 0.8)
+        self._recognizer.phrase_threshold = 0.2  # minimum seconds of speech to consider
+        self._recognizer.non_speaking_duration = 2.0  # seconds of non-speaking before phrase complete
         self._recognizer.dynamic_energy_threshold = True
+        self._recognizer.energy_threshold = 300  # lower = more sensitive to speech
         return self._recognizer
 
     def listen(self) -> str | None:
@@ -139,19 +151,12 @@ class VoiceEngine:
                 "Check your internet connection."
             ) from e
 
-    def speak(self, text: str) -> None:
-        """Convert text to speech and play it through the speakers.
-
-        Falls back to just displaying the text if TTS is not configured.
-
-        Args:
-            text: The text to speak.
-        """
+    def generate_audio(self, text: str) -> str | None:
+        """Generate TTS audio and save to temp file. Returns file path."""
         if not self.tts_available:
-            return  # Caller handles display; we just skip audio
+            return None
 
         self._init_fish()
-        self._init_pygame()
 
         try:
             audio = self._fish_client.tts.convert(
@@ -159,35 +164,45 @@ class VoiceEngine:
                 config=self._tts_config,
             )
 
-            # Write audio to a temp file for pygame playback
             audio_path = self._temp_dir / "response.mp3"
 
-            # fish-audio-sdk returns an iterable of bytes chunks
-            with open(audio_path, "wb") as f:
-                for chunk in audio:
-                    f.write(chunk)
+            if isinstance(audio, bytes):
+                audio_path.write_bytes(audio)
+            else:
+                collected = b"".join(
+                    chunk if isinstance(chunk, bytes) else bytes([chunk])
+                    for chunk in audio
+                )
+                audio_path.write_bytes(collected)
 
-            pygame.mixer.music.load(str(audio_path))
-            pygame.mixer.music.play()
-
-            while pygame.mixer.music.get_busy():
-                pygame.time.wait(50)
-
+            return str(audio_path)
         except Exception as e:
-            # TTS failure should not crash the app -- degrade gracefully
             raise TTSError(f"Text-to-speech failed: {e}") from e
+
+    def play_audio(self, path: str) -> None:
+        """Play an audio file."""
+        self._play_audio_file(path)
+
+    def get_audio_duration(self, path: str) -> float:
+        """Estimate audio duration from file size (MP3 ~128kbps)."""
+        import os
+        size = os.path.getsize(path)
+        return size / 16000  # rough estimate for MP3
+
+    def speak(self, text: str) -> None:
+        """Generate and play TTS. For simple usage."""
+        path = self.generate_audio(text)
+        if path:
+            self._play_audio_file(path)
 
     def stop_speaking(self) -> None:
         """Stop any currently playing audio."""
-        if self._pygame_initialized and pygame.mixer.get_init():
-            pygame.mixer.music.stop()
+        pass  # Audio cleanup handled by system player subprocess
 
     def cleanup(self) -> None:
         """Release audio resources."""
-        if self._pygame_initialized:
-            pygame.mixer.quit()
-            self._pygame_initialized = False
 
+    
         # Clean up temp files
         for f in self._temp_dir.glob("*"):
             try:

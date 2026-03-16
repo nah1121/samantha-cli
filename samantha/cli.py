@@ -31,6 +31,31 @@ def main(ctx: click.Context, text: bool, no_voice: bool) -> None:
 
 
 @main.command()
+@click.argument("session_id", required=False)
+def resume(session_id: str | None) -> None:
+    """Resume a past conversation. Uses Claude's session history.
+
+    Without arguments: continues the most recent Claude session.
+    With a session ID: resumes that specific Claude session.
+    """
+    console = Console()
+    settings = cfg.load()
+    brain = Brain(max_history=settings["max_history"])
+
+    if session_id:
+        # Resume specific Claude session
+        brain._resume_id = session_id
+        console.print(f"  Resuming session {session_id}...", style="green")
+    else:
+        # Continue most recent Claude session
+        brain._continue_mode = True
+        console.print("  Continuing last session...", style="green")
+
+    console.print()
+    _run_assistant(text_mode=False, no_voice=False, brain=brain)
+
+
+@main.command("config")
 @click.argument("key", required=False)
 @click.argument("value", required=False)
 def config(key: str | None, value: str | None) -> None:
@@ -89,13 +114,14 @@ def _mask_secret(key: str, value) -> str:
     return str(value)
 
 
-def _run_assistant(text_mode: bool = False, no_voice: bool = False) -> None:
+def _run_assistant(text_mode: bool = False, no_voice: bool = False, brain: Brain | None = None) -> None:
     """Main conversation loop."""
     ui = UI()
     settings = cfg.load()
 
     # --- Validate prerequisites ---
-    brain = Brain(max_history=settings["max_history"])
+    if brain is None:
+        brain = Brain(max_history=settings["max_history"])
     if not brain.available:
         ui.show_error(
             "The 'claude' CLI is not installed or not on your PATH.\n"
@@ -128,12 +154,18 @@ def _run_assistant(text_mode: bool = False, no_voice: bool = False) -> None:
             "         Set it: samantha config fish_api_key YOUR_KEY"
         )
 
+    # Wire up activity callback so we can see what Claude is doing
+    brain._activity_callback = lambda msg: ui.show_info(f"  {msg}")
+
+    # Show models in use
+    ui.show_info("Brain: Opus (thinking) → Haiku (voice summary) → Fish Audio (TTS)")
+
     # --- Start ---
     ui.show_welcome()
 
     try:
         _conversation_loop(ui, brain, voice, text_mode)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, EOFError):
         pass
     finally:
         voice.cleanup()
@@ -160,6 +192,8 @@ def _conversation_loop(
             ui.show_status(Status.LISTENING)
             try:
                 user_input = voice.listen()
+            except KeyboardInterrupt:
+                break
             except RuntimeError as e:
                 ui.clear_status()
                 ui.show_error(str(e))
@@ -174,9 +208,32 @@ def _conversation_loop(
 
             ui.show_user(user_input)
 
-        # --- Check for exit commands ---
-        if user_input.lower() in ("exit", "quit", "bye", "goodbye", "stop"):
+        # --- Natural language commands ---
+        cmd = user_input.strip().lower()
+
+        # Exit - only exact short commands or full phrases (not partial word matches)
+        if cmd in ("exit", "quit", "bye", "goodbye", "stop", "/exit", "/q"):
             break
+        exit_phrases = [
+            "gotta go", "got to go", "i'm out", "i'm done", "wrap up",
+            "talk later", "see you later", "see ya", "good night",
+            "signing off", "peace out", "catch you later", "bye samantha",
+            "bye bye", "that's all", "we're done", "samantha exit",
+            "samantha quit", "samantha bye",
+        ]
+        if any(cmd == phrase for phrase in exit_phrases):
+            break
+
+        # Clear conversation
+        if any(phrase in cmd for phrase in [
+            "forget everything", "start over", "clear the conversation",
+            "fresh start", "new conversation", "reset",
+        ]) or cmd in ("/clear", "/c"):
+            brain.history.clear()
+            brain._first_sent = False
+            brain._save_history()
+            ui.show_info("Conversation cleared.")
+            continue
 
         # --- 2. Think ---
         ui.show_status(Status.THINKING)
@@ -190,15 +247,44 @@ def _conversation_loop(
         ui.clear_status()
 
         # --- 3. Respond ---
-        ui.show_samantha(response)
+        # Show full Opus response if it was summarized
+        full = getattr(brain, '_full_response', response)
+        if full != response and len(full) > len(response):
+            # Show the full Claude output in dim, then the spoken version
+            from rich.text import Text
+            from rich.panel import Panel
+            ui.console.print(Panel(
+                Text(full, style="dim"),
+                title="[dim]Claude (Opus)[/]",
+                border_style="dim",
+                padding=(0, 1),
+            ))
 
-        if voice.tts_available:
+        if voice.tts_available and not text_mode:
             ui.show_status(Status.SPEAKING)
             try:
-                voice.speak(response)
+                import threading
+
+                audio_path = voice.generate_audio(response)
+                if audio_path:
+                    player = threading.Thread(target=voice.play_audio, args=(audio_path,), daemon=True)
+                    player.start()
+
+                    ui.clear_status()
+                    ui.show_samantha(response)
+
+                    player.join()
+                else:
+                    ui.clear_status()
+                    ui.show_samantha(response)
             except TTSError as e:
+                ui.clear_status()
+                ui.show_samantha(response)
                 ui.show_info(f"Voice output failed: {e}")
-            ui.clear_status()
+        else:
+            ui.show_samantha(response)
+
+        ui.clear_status()
 
 
 if __name__ == "__main__":

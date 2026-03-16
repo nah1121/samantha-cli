@@ -9,7 +9,7 @@ description = "Give Claude a voice. A voice assistant powered by Claude, inspire
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
-authors = [{name = "Ethan Rogers"}]
+authors = [{name = "Ethan Rogers", email = "ethan@ethanplus.ai"}]
 keywords = ["ai", "voice", "assistant", "claude", "tts", "speech"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -21,7 +21,6 @@ dependencies = [
     "SpeechRecognition>=3.10",
     "PyAudio>=0.2.14",
     "fish-audio-sdk>=0.1",
-    "pygame>=2.5",
     "rich>=13.0",
     "click>=8.0",
     "pyyaml>=6.0",
@@ -31,5 +30,5 @@ dependencies = [
 samantha = "samantha.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/ethanplusai/samantha-cli"
+Homepage = "https://ethanplus.ai"
 Repository = "https://github.com/ethanplusai/samantha-cli"
