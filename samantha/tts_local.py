@@ -64,20 +64,43 @@ class LocalTTS:
             return model_path
 
         # Download model using piper
-        print(f"Downloading voice model: {self.voice_model}...")
+        print(f"\n  Downloading Piper voice model '{self.voice_model}' (~60MB)...")
+        print(f"  This is a one-time download. Future use will be instant.\n")
+
         try:
             # Try to download using piper's built-in download
-            from piper.download import ensure_voice_exists, get_voices
+            from piper.download import ensure_voice_exists
 
             ensure_voice_exists(
                 self.voice_model,
                 [self.model_dir],
                 self.model_dir,
             )
+            print(f"  ✓ Voice model ready!\n")
+        except ImportError:
+            # piper.download not available, use manual download
+            print(f"  Using direct download method...")
+            self._download_model_manual(model_path, config_path)
         except Exception as e:
             # Fallback: manual download
-            print(f"Using fallback download method: {e}")
-            self._download_model_manual(model_path, config_path)
+            print(f"  Primary download method failed, trying direct download...")
+            try:
+                self._download_model_manual(model_path, config_path)
+            except Exception as manual_error:
+                raise RuntimeError(
+                    f"Failed to download Piper voice model '{self.voice_model}'.\n"
+                    f"This might be due to:\n"
+                    f"  1. No internet connection (models download on first use)\n"
+                    f"  2. Model name not found: {self.voice_model}\n"
+                    f"  3. GitHub download issues\n"
+                    f"  4. Insufficient disk space (~60MB needed)\n"
+                    f"\nPrimary error: {e}\n"
+                    f"Fallback error: {manual_error}\n"
+                    f"\nTry:\n"
+                    f"  - Check internet connection\n"
+                    f"  - Verify voice name: samantha config piper_voice samantha\n"
+                    f"  - Install piper-tts: pip install piper-tts"
+                ) from manual_error
 
         return model_path
 
@@ -89,18 +112,35 @@ class LocalTTS:
 
         try:
             # Download .onnx file
-            print(f"Downloading {model_path.name}...")
+            print(f"  Downloading model file...")
             urllib.request.urlretrieve(f"{base_url}", str(model_path))
 
             # Download .onnx.json config file
-            print(f"Downloading {config_path.name}...")
+            print(f"  Downloading config file...")
             urllib.request.urlretrieve(f"{base_url}.json", str(config_path))
 
-            print("Download complete!")
+            print(f"  ✓ Voice model ready!\n")
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                raise RuntimeError(
+                    f"Voice model '{self.voice_model}' not found.\n"
+                    f"Available voices: samantha, amy, kathleen, ryan, libritts\n"
+                    f"Change voice with: samantha config piper_voice <voice_name>"
+                ) from e
+            else:
+                raise RuntimeError(
+                    f"HTTP error downloading model: {e.code} {e.reason}"
+                ) from e
+        except urllib.error.URLError as e:
+            raise RuntimeError(
+                f"Network error downloading model. Check your internet connection.\n"
+                f"Error: {e.reason}"
+            ) from e
         except Exception as e:
             raise RuntimeError(
-                f"Failed to download voice model {self.voice_model}. "
-                f"Error: {e}. Please download manually from: {base_url}"
+                f"Failed to download voice model '{self.voice_model}'.\n"
+                f"Error: {e}\n"
+                f"Manual download URL: {base_url}"
             ) from e
 
     def generate_audio(self, text: str, output_path: Optional[str] = None) -> str:

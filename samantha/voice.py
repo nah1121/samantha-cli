@@ -188,8 +188,17 @@ class VoiceEngine:
                 phrase_time_limit=self.phrase_time_limit,
             )
             return text
+        except RuntimeError:
+            # Re-raise RuntimeError with original message (includes download errors)
+            raise
         except Exception as e:
-            raise RuntimeError(f"Local STT error: {e}") from e
+            raise RuntimeError(
+                f"Local STT error: {e}\n"
+                f"Try:\n"
+                f"  - Ensure faster-whisper is installed: pip install faster-whisper\n"
+                f"  - Check microphone permissions\n"
+                f"  - Switch to cloud mode: samantha config stt_engine cloud"
+            ) from e
 
     def _listen_cloud(self) -> str | None:
         """Listen using cloud Google STT."""
@@ -243,8 +252,16 @@ class VoiceEngine:
             tts = self._init_local_tts()
             audio_path = tts.generate_audio(text)
             return audio_path
+        except RuntimeError:
+            # Re-raise RuntimeError with original message (includes download errors)
+            raise
         except Exception as e:
-            raise TTSError(f"Local TTS error: {e}") from e
+            raise TTSError(
+                f"Local TTS error: {e}\n"
+                f"Try:\n"
+                f"  - Ensure piper-tts is installed: pip install piper-tts\n"
+                f"  - Switch to cloud mode: samantha config tts_engine cloud"
+            ) from e
 
     def _generate_audio_cloud(self, text: str) -> str | None:
         """Generate audio using cloud Fish Audio TTS."""

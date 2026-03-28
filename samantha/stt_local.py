@@ -68,12 +68,46 @@ class LocalSTT:
             from faster_whisper import WhisperModel
 
             # Download and cache model on first use
-            self._model = WhisperModel(
-                self.model_size,
-                device=self.device,
-                compute_type=self.compute_type,
-            )
+            # Check if this is the first download
+            cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
+            model_cache_pattern = f"models--Systran--faster-whisper-{self.model_size}"
+            model_exists = any(cache_dir.glob(f"*{model_cache_pattern}*")) if cache_dir.exists() else False
+
+            if not model_exists:
+                print(f"\n  Downloading Whisper {self.model_size} model (~{self._get_model_size_mb()}MB)...")
+                print(f"  This is a one-time download. Future use will be instant.\n")
+
+            try:
+                self._model = WhisperModel(
+                    self.model_size,
+                    device=self.device,
+                    compute_type=self.compute_type,
+                )
+
+                if not model_exists:
+                    print(f"  ✓ Whisper model ready!\n")
+
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to load Whisper model '{self.model_size}'. "
+                    f"This might be due to:\n"
+                    f"  1. No internet connection (models download on first use)\n"
+                    f"  2. Insufficient disk space (~{self._get_model_size_mb()}MB needed)\n"
+                    f"  3. Missing dependencies: pip install faster-whisper\n"
+                    f"Error details: {e}"
+                ) from e
         return self._model
+
+    def _get_model_size_mb(self) -> str:
+        """Get approximate model size in MB for user info."""
+        sizes = {
+            "tiny": "75",
+            "base": "145",
+            "small": "488",
+            "medium": "1.5GB",
+            "large-v3": "3GB",
+        }
+        return sizes.get(self.model_size, "unknown")
 
     def transcribe_file(self, audio_path: str) -> str:
         """Transcribe audio from a file path.
