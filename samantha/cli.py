@@ -64,8 +64,10 @@ def config(key: str | None, value: str | None) -> None:
     \b
     Examples:
         samantha config                  # Show all config
-        samantha config fish_api_key     # Show one value
-        samantha config fish_api_key sk-xxx  # Set a value
+        samantha config stt_engine       # Show one value
+        samantha config stt_engine local # Set to local (free)
+        samantha config tts_engine local # Set to local (free)
+        samantha config whisper_model small  # Use smaller/faster model
     """
     console = Console()
 
@@ -107,6 +109,32 @@ def config(key: str | None, value: str | None) -> None:
     console.print(f"  [green]Set[/green] [cyan]{key}[/cyan] = {_mask_secret(key, value)}")
 
 
+@main.command("setup")
+def setup() -> None:
+    """Run the setup script to install dependencies and download models.
+
+    This will:
+    - Check system requirements
+    - Install system dependencies (portaudio, ffmpeg)
+    - Install Python packages
+    - Download Whisper and Piper models
+    - Create default configuration
+    """
+    import subprocess
+    from pathlib import Path
+
+    console = Console()
+    script_path = Path(__file__).parent.parent / "setup_samantha.py"
+
+    if not script_path.exists():
+        console.print("  [red]Setup script not found![/red]")
+        console.print(f"  Expected at: {script_path}")
+        sys.exit(1)
+
+    console.print("  [green]Running setup...[/green]\n")
+    subprocess.run([sys.executable, str(script_path)])
+
+
 def _mask_secret(key: str, value) -> str:
     """Mask sensitive config values for display."""
     if "key" in key.lower() and isinstance(value, str) and len(value) > 8:
@@ -131,34 +159,69 @@ def _run_assistant(text_mode: bool = False, no_voice: bool = False, brain: Brain
 
     # --- Initialize voice engine ---
     voice = VoiceEngine(
-        fish_api_key=settings["fish_api_key"] if not no_voice else "",
-        voice_model_id=settings["voice_model_id"],
-        speech_speed=settings["speech_speed"],
-        language=settings["language"],
-        listen_timeout=settings["listen_timeout"],
-        phrase_time_limit=settings["phrase_time_limit"],
+        stt_engine=settings.get("stt_engine", "local"),
+        tts_engine=settings.get("tts_engine", "local"),
+        whisper_model=settings.get("whisper_model", "base"),
+        whisper_device=settings.get("whisper_device", "auto"),
+        whisper_compute_type=settings.get("whisper_compute_type"),
+        piper_voice=settings.get("piper_voice", "samantha"),
+        fish_api_key=settings.get("fish_api_key", "") if not no_voice else "",
+        voice_model_id=settings.get("voice_model_id", ""),
+        speech_speed=settings.get("speech_speed", 0.95),
+        language=settings.get("language", "en-US"),
+        listen_timeout=settings.get("listen_timeout", 10),
+        phrase_time_limit=settings.get("phrase_time_limit", 30),
     )
 
-    # Warn about missing config
+    # Warn about missing dependencies
     if not text_mode and not voice.stt_available:
-        ui.show_error(
-            "SpeechRecognition or PyAudio not installed. "
-            "Falling back to text mode.\n"
-            "         Install: pip install SpeechRecognition PyAudio"
-        )
+        stt_engine = settings.get("stt_engine", "local")
+        if stt_engine == "local":
+            ui.show_error(
+                "Local STT (Whisper) not available. Install: pip install faster-whisper\n"
+                "         Or switch to cloud: samantha config stt_engine cloud\n"
+                "         Falling back to text mode."
+            )
+        else:
+            ui.show_error(
+                "Cloud STT not available. Install: pip install SpeechRecognition\n"
+                "         Or switch to local: samantha config stt_engine local\n"
+                "         Falling back to text mode."
+            )
         text_mode = True
 
     if not no_voice and not voice.tts_available:
-        ui.show_info(
-            "No Fish Audio API key configured. Running without voice output.\n"
-            "         Set it: samantha config fish_api_key YOUR_KEY"
-        )
+        tts_engine = settings.get("tts_engine", "local")
+        if tts_engine == "local":
+            ui.show_info(
+                "Local TTS (Piper) not available. Install: pip install piper-tts\n"
+                "         Or switch to cloud: samantha config tts_engine cloud\n"
+                "         Running without voice output."
+            )
+        else:
+            ui.show_info(
+                "Cloud TTS not configured. Set Fish Audio key: samantha config fish_api_key YOUR_KEY\n"
+                "         Or switch to local: samantha config tts_engine local\n"
+                "         Running without voice output."
+            )
 
     # Wire up activity callback so we can see what Claude is doing
     brain._activity_callback = lambda msg: ui.show_info(f"  {msg}")
 
     # Show models in use
-    ui.show_info("Brain: Opus (thinking) → Haiku (voice summary) → Fish Audio (TTS)")
+    stt_engine = settings.get("stt_engine", "local")
+    tts_engine = settings.get("tts_engine", "local")
+
+    if stt_engine == "local" and tts_engine == "local":
+        whisper_model = settings.get("whisper_model", "base")
+        piper_voice = settings.get("piper_voice", "samantha")
+        ui.show_info(f"Mode: 100% Local & Free — Whisper ({whisper_model}) → Claude → Piper ({piper_voice})")
+    elif stt_engine == "local":
+        ui.show_info("Mode: Hybrid — Whisper (local) → Claude → Fish Audio (cloud)")
+    elif tts_engine == "local":
+        ui.show_info("Mode: Hybrid — Google STT (cloud) → Claude → Piper (local)")
+    else:
+        ui.show_info("Mode: Cloud — Google STT → Claude → Fish Audio")
 
     # --- Start ---
     ui.show_welcome()

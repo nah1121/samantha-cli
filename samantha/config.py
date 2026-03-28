@@ -15,9 +15,24 @@ CONFIG_DIR = Path.home() / ".samantha"
 CONFIG_FILE = CONFIG_DIR / "config.yaml"
 
 DEFAULTS: dict[str, Any] = {
+    # Engine selection (local or cloud)
+    "stt_engine": "local",  # "local" (whisper) or "cloud" (google)
+    "tts_engine": "local",  # "local" (piper) or "cloud" (fish audio)
+
+    # Local STT (Whisper) settings
+    "whisper_model": "base",  # tiny, base, small, medium, large-v3
+    "whisper_device": "auto",  # auto, cpu, cuda
+    "whisper_compute_type": None,  # None (auto), int8, float16, float32
+
+    # Local TTS (Piper) settings
+    "piper_voice": "samantha",  # samantha, amy, kathleen, ryan, libritts
+    "speech_speed": 0.95,
+
+    # Cloud fallback settings (legacy, optional)
     "fish_api_key": "",
     "voice_model_id": "474887f7949b4d1ab3e626cddf82613a",
-    "speech_speed": 0.95,
+
+    # General settings
     "language": "en-US",
     "max_history": 10,
     "listen_timeout": 10,
