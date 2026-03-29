@@ -18,12 +18,31 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "SpeechRecognition>=3.10",
-    "PyAudio>=0.2.14",
-    "fish-audio-sdk>=0.1",
+    # Core dependencies
     "rich>=13.0",
     "click>=8.0",
     "pyyaml>=6.0",
+    "numpy>=1.24.0",
+
+    # Local STT (Speech-to-Text) with Whisper
+    "faster-whisper>=1.0.0",
+    "pyaudio>=0.2.14",
+
+    # Local TTS (Text-to-Speech) with Piper
+    "piper-tts>=1.2.0",
+
+    # Optional: Cloud fallback (can be removed for 100% local)
+    "SpeechRecognition>=3.10; extra == 'cloud'",
+    "fish-audio-sdk>=0.1; extra == 'cloud'",
+]
+
+[project.optional-dependencies]
+cloud = [
+    "SpeechRecognition>=3.10",
+    "fish-audio-sdk>=0.1",
+]
+dev = [
+    "pytest>=7.0",
 ]
 
 [project.scripts]
@@ -32,3 +51,10 @@ samantha = "samantha.cli:main"
 [project.urls]
 Homepage = "https://ethanplus.ai"
 Repository = "https://github.com/ethanplusai/samantha-cli"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
