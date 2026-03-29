@@ -67,16 +67,13 @@ class TestLocalSTTDownload(unittest.TestCase):
         except ImportError as e:
             self.skipTest(f"Cannot test without dependencies: {e}")
 
-    @patch('samantha.stt_local.torch')
-    def test_device_auto_detection_with_cuda(self, mock_torch):
+    def test_device_auto_detection_with_cuda(self):
         """Test device auto-detection uses CUDA when available."""
         try:
-            from samantha.stt_local import LocalSTT
-
-            mock_torch.cuda.is_available.return_value = True
-
-            stt = LocalSTT(model_size="base", device="auto")
-            self.assertEqual(stt.device, "cuda")
+            with patch('torch.cuda.is_available', return_value=True):
+                from samantha.stt_local import LocalSTT
+                stt = LocalSTT(model_size="base", device="auto")
+                self.assertEqual(stt.device, "cuda")
         except ImportError as e:
             self.skipTest(f"Cannot test without dependencies: {e}")
 
@@ -95,90 +92,87 @@ class TestLocalSTTDownload(unittest.TestCase):
         except ImportError as e:
             self.skipTest(f"Cannot test without dependencies: {e}")
 
-    @patch('samantha.stt_local.WhisperModel')
-    @patch('samantha.stt_local.Path')
-    def test_model_download_progress_messages(self, mock_path_class, mock_whisper):
+    def test_model_download_progress_messages(self):
         """Test that model loading shows progress messages on first download."""
         try:
             from samantha.stt_local import LocalSTT
+            from pathlib import Path
 
             # Mock cache directory to simulate first download
-            mock_cache = MagicMock()
-            mock_cache.exists.return_value = True
-            mock_cache.glob.return_value = []  # No cached model
+            with patch('pathlib.Path.home') as mock_home:
+                mock_cache = MagicMock()
+                mock_cache.exists.return_value = True
+                mock_cache.glob.return_value = []  # No cached model
 
-            mock_path = MagicMock()
-            mock_path.home.return_value = mock_path
-            mock_path.__truediv__ = lambda self, other: mock_cache
-            mock_path_class.home.return_value = mock_path
+                mock_path = MagicMock()
+                mock_path.__truediv__ = lambda self, other: mock_cache
+                mock_home.return_value = mock_path
 
-            stt = LocalSTT(model_size="base", device="cpu")
+                stt = LocalSTT(model_size="base", device="cpu")
 
-            with patch('builtins.print') as mock_print:
-                # Access the model property to trigger download
-                _ = stt.model
+                with patch('faster_whisper.WhisperModel') as mock_whisper:
+                    with patch('builtins.print') as mock_print:
+                        # Access the model property to trigger download
+                        _ = stt.model
 
-            # Check that progress messages were printed
-            print_calls = [str(call) for call in mock_print.call_args_list]
-            has_download_msg = any("Downloading" in call for call in print_calls)
-            has_ready_msg = any("ready" in call.lower() for call in print_calls)
+                    # Check that progress messages were printed
+                    print_calls = [str(call) for call in mock_print.call_args_list]
+                    has_download_msg = any("Downloading" in call for call in print_calls)
+                    has_ready_msg = any("ready" in call.lower() for call in print_calls)
 
-            self.assertTrue(has_download_msg, "Should print downloading message")
-            self.assertTrue(has_ready_msg, "Should print ready message")
+                    self.assertTrue(has_download_msg, "Should print downloading message")
+                    self.assertTrue(has_ready_msg, "Should print ready message")
         except ImportError as e:
             self.skipTest(f"Cannot test without dependencies: {e}")
 
-    @patch('samantha.stt_local.WhisperModel')
-    @patch('samantha.stt_local.Path')
-    def test_model_no_messages_when_cached(self, mock_path_class, mock_whisper):
+    def test_model_no_messages_when_cached(self):
         """Test that model loading is silent when model already cached."""
         try:
             from samantha.stt_local import LocalSTT
 
             # Mock cache directory to simulate cached model
-            mock_cache = MagicMock()
-            mock_cache.exists.return_value = True
-            mock_cache.glob.return_value = [MagicMock()]  # Model exists
+            with patch('pathlib.Path.home') as mock_home:
+                mock_cache = MagicMock()
+                mock_cache.exists.return_value = True
+                mock_cache.glob.return_value = [MagicMock()]  # Model exists
 
-            mock_path = MagicMock()
-            mock_path.home.return_value = mock_path
-            mock_path.__truediv__ = lambda self, other: mock_cache
-            mock_path_class.home.return_value = mock_path
+                mock_path = MagicMock()
+                mock_path.__truediv__ = lambda self, other: mock_cache
+                mock_home.return_value = mock_path
 
-            stt = LocalSTT(model_size="base", device="cpu")
+                stt = LocalSTT(model_size="base", device="cpu")
 
-            with patch('builtins.print') as mock_print:
-                # Access the model property
-                _ = stt.model
+                with patch('faster_whisper.WhisperModel') as mock_whisper:
+                    with patch('builtins.print') as mock_print:
+                        # Access the model property
+                        _ = stt.model
 
-            # Check that NO progress messages were printed
-            print_calls = [str(call) for call in mock_print.call_args_list]
-            has_download_msg = any("Downloading" in call for call in print_calls)
+                    # Check that NO progress messages were printed
+                    print_calls = [str(call) for call in mock_print.call_args_list]
+                    has_download_msg = any("Downloading" in call for call in print_calls)
 
-            self.assertFalse(has_download_msg, "Should not print downloading message for cached model")
+                    self.assertFalse(has_download_msg, "Should not print downloading message for cached model")
         except ImportError as e:
             self.skipTest(f"Cannot test without dependencies: {e}")
 
-    @patch('samantha.stt_local.WhisperModel')
-    def test_model_loading_error_message(self, mock_whisper):
+    def test_model_loading_error_message(self):
         """Test that model loading failure provides helpful error message."""
         try:
             from samantha.stt_local import LocalSTT
 
-            # Mock WhisperModel to raise an exception
-            mock_whisper.side_effect = Exception("Network error")
-
             stt = LocalSTT(model_size="base", device="cpu")
 
-            with self.assertRaises(RuntimeError) as context:
-                _ = stt.model
+            # Mock WhisperModel to raise an exception
+            with patch('faster_whisper.WhisperModel', side_effect=Exception("Network error")):
+                with self.assertRaises(RuntimeError) as context:
+                    _ = stt.model
 
-            error_msg = str(context.exception)
-            self.assertIn("Failed to load Whisper model", error_msg)
-            self.assertIn("base", error_msg)
-            self.assertIn("internet", error_msg.lower())
-            self.assertIn("disk space", error_msg.lower())
-            self.assertIn("pip install", error_msg.lower())
+                error_msg = str(context.exception)
+                self.assertIn("Failed to load Whisper model", error_msg)
+                self.assertIn("base", error_msg)
+                self.assertIn("internet", error_msg.lower())
+                self.assertIn("disk space", error_msg.lower())
+                self.assertIn("pip install", error_msg.lower())
         except ImportError as e:
             self.skipTest(f"Cannot test without dependencies: {e}")
 
@@ -187,7 +181,7 @@ class TestLocalSTTDownload(unittest.TestCase):
         try:
             from samantha.stt_local import LocalSTT
 
-            with patch('samantha.stt_local.WhisperModel') as mock_whisper:
+            with patch('faster_whisper.WhisperModel') as mock_whisper:
                 stt = LocalSTT(model_size="base", device="cpu")
 
                 # Model should not be loaded yet
@@ -195,8 +189,7 @@ class TestLocalSTTDownload(unittest.TestCase):
                 self.assertIsNone(stt._model)
 
                 # Now access it
-                with patch('samantha.stt_local.Path'):
-                    _ = stt.model
+                _ = stt.model
 
                 # Now it should be loaded
                 mock_whisper.assert_called_once()
