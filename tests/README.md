@@ -86,6 +86,29 @@ The test suite covers:
 
 ## Results
 
-Current test status: **22 passed, 12 skipped**
+Current test status: **34 passed, 0 skipped, 0 failed**
 
-Skipped tests are due to missing optional dependencies (faster-whisper, numpy) in the CI environment. These tests will run successfully when dependencies are installed locally.
+All tests now pass with the required dependencies installed:
+- numpy >= 1.24.0
+- faster-whisper >= 1.0.0
+- pyaudio >= 0.2.14
+- piper-tts >= 1.2.0
+
+### Installing Dependencies
+
+To run all tests, install the dependencies:
+
+```bash
+# Install system dependencies (required for pyaudio)
+sudo apt-get install -y portaudio19-dev python3-dev
+
+# Install Python dependencies
+pip install numpy faster-whisper pyaudio piper-tts pytest
+```
+
+Or install the package with dev dependencies:
+
+```bash
+pip install -e ".[dev]"
+pip install numpy faster-whisper pyaudio piper-tts
+```
