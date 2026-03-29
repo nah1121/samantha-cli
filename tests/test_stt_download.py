@@ -61,7 +61,8 @@ class TestLocalSTTDownload(unittest.TestCase):
         try:
             from samantha.stt_local import LocalSTT
 
-            with patch('samantha.stt_local.torch', side_effect=ImportError):
+            # Mock _detect_device to return cpu (simulating no CUDA available)
+            with patch.object(LocalSTT, '_detect_device', return_value='cpu'):
                 stt = LocalSTT(model_size="base", device="auto")
                 self.assertEqual(stt.device, "cpu")
         except ImportError as e:
@@ -70,8 +71,10 @@ class TestLocalSTTDownload(unittest.TestCase):
     def test_device_auto_detection_with_cuda(self):
         """Test device auto-detection uses CUDA when available."""
         try:
-            with patch('torch.cuda.is_available', return_value=True):
-                from samantha.stt_local import LocalSTT
+            from samantha.stt_local import LocalSTT
+
+            # Mock _detect_device to return cuda (simulating CUDA available)
+            with patch.object(LocalSTT, '_detect_device', return_value='cuda'):
                 stt = LocalSTT(model_size="base", device="auto")
                 self.assertEqual(stt.device, "cuda")
         except ImportError as e:
@@ -130,28 +133,24 @@ class TestLocalSTTDownload(unittest.TestCase):
         try:
             from samantha.stt_local import LocalSTT
 
-            # Mock cache directory to simulate cached model
-            with patch('pathlib.Path.home') as mock_home:
-                mock_cache = MagicMock()
-                mock_cache.exists.return_value = True
-                mock_cache.glob.return_value = [MagicMock()]  # Model exists
+            stt = LocalSTT(model_size="base", device="cpu")
 
-                mock_path = MagicMock()
-                mock_path.__truediv__ = lambda self, other: mock_cache
-                mock_home.return_value = mock_path
+            # Mock the cache directory check to say model exists
+            with patch('pathlib.Path.exists', return_value=True):
+                with patch('pathlib.Path.glob') as mock_glob:
+                    # Make glob return a non-empty list (model exists)
+                    mock_glob.return_value = [MagicMock()]
 
-                stt = LocalSTT(model_size="base", device="cpu")
+                    with patch('faster_whisper.WhisperModel') as mock_whisper:
+                        with patch('builtins.print') as mock_print:
+                            # Access the model property
+                            _ = stt.model
 
-                with patch('faster_whisper.WhisperModel') as mock_whisper:
-                    with patch('builtins.print') as mock_print:
-                        # Access the model property
-                        _ = stt.model
+                        # Check that NO progress messages were printed
+                        print_calls = [str(call) for call in mock_print.call_args_list]
+                        has_download_msg = any("Downloading" in call for call in print_calls)
 
-                    # Check that NO progress messages were printed
-                    print_calls = [str(call) for call in mock_print.call_args_list]
-                    has_download_msg = any("Downloading" in call for call in print_calls)
-
-                    self.assertFalse(has_download_msg, "Should not print downloading message for cached model")
+                        self.assertFalse(has_download_msg, "Should not print downloading message for cached model")
         except ImportError as e:
             self.skipTest(f"Cannot test without dependencies: {e}")
 
